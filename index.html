@@ -423,25 +423,43 @@ function adminSessions(){
   $('#sessList').querySelectorAll('[data-prev]').forEach(b=>b.onclick=()=>{const s=list.find(x=>x.sid===b.dataset.prev);if(s)enterCandidate(s,true);});
 }
 
+function fileChips(fileData){
+  if(!fileData||!fileData.length)return '';
+  return '<div style="margin:8px 0 4px"><span class="faint" style="font-size:12px;font-weight:600">SUBMITTED FILES</span><div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:flex-start">'+fileData.map(fd=>{
+    const src='data:'+(fd.type||'application/octet-stream')+';base64,'+fd.data;
+    const isImg=(fd.type||'').indexOf('image/')===0||/\.(png|jpe?g|gif|webp|svg)$/i.test(fd.name||'');
+    const isPdf=(fd.type||'')==='application/pdf'||/\.pdf$/i.test(fd.name||'');
+    const size=fd.size?' ('+(fd.size/1024).toFixed(1)+' KB)':'';
+    if(isImg){return '<div style="text-align:center"><a href="'+src+'" target="_blank" rel="noopener"><img src="'+src+'" style="width:150px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></a><div style="margin-top:4px"><a href="'+src+'" download="'+esc(fd.name)+'" style="font-size:11.5px">\u2b07 '+esc(fd.name)+'</a></div></div>';}
+    const open=isPdf?('<a href="'+src+'" target="_blank" rel="noopener" class="btn btn-soft btn-sm" style="font-size:12px">\u2197 Open</a> '):'';
+    return '<span style="display:inline-flex;gap:6px;align-items:center">'+open+'<a href="'+src+'" download="'+esc(fd.name)+'" class="btn btn-ghost btn-sm" style="font-size:12px">\u2b07 '+esc(fd.name)+size+'</a></span>';
+  }).join('')+'</div></div>';
+}
+
+function showSubmission(data){
+  const out=$('#subOut');
+  if(!data||!data.sid){out.innerHTML=`<div class="banner banner-err">Couldn't read that submission. Paste the full code, or load the candidate's .sm3 file.</div>`;return;}
+  const tasks=(data.answers||[]).map(ans=>{const t=ASSETS.assessments.find(a=>a.id===ans.id);
+    const filesHtml=(ans.fileData&&ans.fileData.length)?fileChips(ans.fileData)
+      :(ans.files&&ans.files.length?`<p class="faint" style="font-size:12px;margin:6px 0">Files listed (load the candidate's .sm3 file to open them): ${ans.files.map(esc).join(', ')}</p>`:'<p class="faint" style="font-size:12px;margin:6px 0">No files submitted.</p>');
+    return `<div class="session-item"><h4>${esc(t?t.title:ans.id)} ${ans.complete?'<span class="pill pill-ok" style="margin-left:6px">Completed</span>':'<span class="pill pill-warn" style="margin-left:6px">Incomplete</span>'}</h4>${filesHtml}<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap;font-size:13.5px;margin-top:8px">${esc(ans.notes||'(no notes)')}</div></div>`;}).join('');
+  out.innerHTML=`<div class="banner banner-info"><div><b>${esc(data.name)}</b>${data.email?' \u00b7 '+esc(data.email):''}<br><span class="faint">Submitted ${fmtDate(data.submittedAt)} \u00b7 Ref ${esc(data.sid)}</span></div></div>
+    <p class="muted" style="font-size:13px;margin:0 0 8px"><b>Proctoring:</b> ${data.proctor?`camera ${data.proctor.cam?'on':'off'}, mic ${data.proctor.mic?'on':'off'}, screen ${data.proctor.screen?'shared':'off'} \u00b7 ${data.proctor.snaps||0} snapshots \u00b7 active ${Math.round((data.duration||0)/60)} min`:'n/a'}</p>${tasks||'<p class="muted">No answers.</p>'}`;
+}
+
+function decodeCode(raw){let data=null;try{const __d=LZString.decompressFromEncodedURIComponent(raw);if(__d){const c=JSON.parse(__d);if(Array.isArray(c)){data={sid:c[0],name:c[1],email:c[2],submittedAt:c[3],duration:c[4],proctor:{cam:!!(c[5]&1),mic:!!(c[5]&2),screen:!!(c[5]&4),snaps:c[6]},recording:!!c[7],answers:(c[8]||[]).map(a=>({id:a[0],complete:!!a[1],notes:a[2],files:a[3]?a[3].split('|'):[]}))};}else if(c&&c.sid){data=c;}}}catch(e){}if(!data){data=b64urlDecode(raw);}return data;}
+
 function adminReview(){
   const body=$('#adminBody');
   body.innerHTML=`<div class="card card-pad"><div class="section-title"><h2>Review a submission</h2></div>
-    <p class="muted" style="margin:4px 0 16px;font-size:14px">Paste the completion code the candidate sent to see their answers and proctoring summary. The screen recording arrives as a separate video file.</p>
-    <div class="field"><textarea class="textarea code-area" id="subCode" placeholder="Paste completion code here…"></textarea></div>
-    <button class="btn btn-primary" id="decodeBtn">Open submission</button><div id="subOut" style="margin-top:22px"></div></div>`;
-  $('#decodeBtn').onclick=()=>{
-    const __raw=$('#subCode').value.trim();let data=null;try{const __d=LZString.decompressFromEncodedURIComponent(__raw);if(__d){const c=JSON.parse(__d);if(Array.isArray(c)){data={sid:c[0],name:c[1],email:c[2],submittedAt:c[3],duration:c[4],proctor:{cam:!!(c[5]&1),mic:!!(c[5]&2),screen:!!(c[5]&4),snaps:c[6]},recording:!!c[7],answers:(c[8]||[]).map(a=>({id:a[0],complete:!!a[1],notes:a[2],files:a[3]?a[3].split('|'):[]}))};}else if(c&&c.sid){data=c;}}}catch(e){}if(!data){data=b64urlDecode(__raw);}const out=$('#subOut');
-    if(!data||!data.sid){out.innerHTML=`<div class="banner banner-err">That code couldn't be read. Make sure you pasted all of it.</div>`;return;}
-    const tasks=(data.answers||[]).map(ans=>{const t=ASSETS.assessments.find(a=>a.id===ans.id);
-      return `<div class="session-item"><h4>${esc(t?t.title:ans.id)} ${ans.complete?'<span class="pill pill-ok" style="margin-left:6px">Completed</span>':'<span class="pill pill-warn" style="margin-left:6px">Incomplete</span>'}</h4>
-      ${ans.fileData&&ans.fileData.length
-        ? '<div style="margin:8px 0 4px"><span class="faint" style="font-size:12px;font-weight:600">SUBMITTED FILES</span><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">'+ans.fileData.map(fd=>`<a href="data:${fd.type||'application/octet-stream'};base64,${fd.data}" download="${esc(fd.name)}" class="btn btn-ghost btn-sm" style="font-size:12px">⬇ ${esc(fd.name)}${fd.size?' ('+( fd.size/1024).toFixed(1)+' KB)':''}</a>`).join('')+'</div></div>'
-        : ans.files&&ans.files.length ? `<p class="faint" style="font-size:12px;margin:6px 0">Files listed (no data): ${ans.files.map(esc).join(', ')}</p>` : '<p class="faint" style="font-size:12px;margin:6px 0">No files submitted.</p>'
-      }
-      <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap;font-size:13.5px;margin-top:8px">${esc(ans.notes||'(no notes)')}</div></div>`;}).join('');
-    out.innerHTML=`<div class="banner banner-info"><div><b>${esc(data.name)}</b>${data.email?' · '+esc(data.email):''}<br><span class="faint">Submitted ${fmtDate(data.submittedAt)} · Session ${data.sid}</span></div></div>
-      <p class="muted" style="font-size:13px;margin:0 0 8px"><b>Proctoring:</b> ${data.proctor?`camera ${data.proctor.cam?'on':'off'}, mic ${data.proctor.mic?'on':'off'}, screen ${data.proctor.screen?'shared':'off'} · ${data.proctor.snaps||0} snapshots · active ${Math.round((data.duration||0)/60)} min`:'n/a'}</p>${tasks||'<p class="muted">No answers.</p>'}`;
-  };
+    <p class="muted" style="margin:4px 0 16px;font-size:14px">Paste the short code for a quick view of answers, or load the candidate's <b>.sm3</b> file to open and preview their submitted files.</p>
+    <div class="field"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:7px">Quick view \u2014 paste code</label><textarea class="textarea code-area" id="subCode" placeholder="Paste completion code here\u2026"></textarea></div>
+    <button class="btn btn-primary" id="decodeBtn">Open from code</button>
+    <div style="display:flex;align-items:center;gap:12px;margin:18px 0"><div style="flex:1;height:1px;background:var(--line)"></div><span class="faint" style="font-size:12px">or</span><div style="flex:1;height:1px;background:var(--line)"></div></div>
+    <div class="field" style="margin:0"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:7px">Full review \u2014 load submission file (.sm3) to open files</label><input class="input" type="file" id="subFile" accept=".sm3,.json,application/json"></div>
+    <div id="subOut" style="margin-top:22px"></div></div>`;
+  $('#decodeBtn').onclick=()=>showSubmission(decodeCode($('#subCode').value.trim()));
+  $('#subFile').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{let d=null;try{d=JSON.parse(r.result);}catch(_){}showSubmission(d);};r.readAsText(f);});
 }
 
 function renderBadLink(){
@@ -650,10 +668,11 @@ function candDone(submission,delivered){
     <div class="card card-pad" style="margin-bottom:16px"><h3 style="margin:0 0 6px;font-size:16px">2 · Completion code</h3>
       <p class="muted" style="font-size:13.5px;margin:0 0 12px">Copy this and send it to the company. It holds your answers and proctoring summary.</p>
       <div class="field"><textarea class="textarea code-area" id="doneCode" readonly style="min-height:90px">${code}</textarea></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-soft" id="copyCode">Copy code</button><button class="btn btn-ghost" id="dlReport">Download report (.html)</button>${submission.email?'<button class="btn btn-ghost" id="emailBack">Email it back</button>':''}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" id="dlSub">\u2b07 Download submission file (.sm3)</button><button class="btn btn-soft" id="copyCode">Copy code</button><button class="btn btn-ghost" id="dlReport">Download report (.html)</button>${submission.email?'<button class="btn btn-ghost" id="emailBack">Email it back</button>':''}</div></div>
     <p class="hint" style="text-align:center">You can close this tab once you've sent your recording and code.</p></div>`;
   if(PREVIEW_MODE&&$('#backAdmin'))$('#backAdmin').onclick=exitPreview;
   if(submission.recording)$('#dlVideo').onclick=()=>{const a=document.createElement('a');a.href=Proctor.recordingUrl;a.download=`proctoring_${submission.name.replace(/\s+/g,'_')}_${submission.sid}.webm`;a.click();};
+  $('#dlSub').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(submission)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='submission_'+((submission.name||'candidate').replace(/[^a-z0-9]+/ig,'_'))+'_'+submission.sid+'.sm3';a.click();toast('Submission file downloaded \u2014 email it to the company.');};
   $('#copyCode').onclick=()=>{navigator.clipboard.writeText(code).then(()=>toast('Code copied.')).catch(()=>{$('#doneCode').select();document.execCommand('copy');toast('Code copied.');});};
   $('#dlReport').onclick=()=>downloadReport(submission);
   if($('#emailBack'))$('#emailBack').onclick=()=>{const s=encodeURIComponent('Assessment submission — '+submission.name);const b=encodeURIComponent(`Hi,\n\nHere is my completion code. I'll attach the proctoring recording separately.\n\nCODE:\n${code}\n\nThanks,\n${submission.name}`);location.href=`mailto:?subject=${s}&body=${b}`;};
